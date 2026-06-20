@@ -69,6 +69,12 @@ class Config:
         default_factory=lambda: _env_float("PAPER_STARTING_CASH", 100_000.0)
     )
 
+    # Target size for a NEW position as a fraction of equity (sizing preference,
+    # not a hard limit — the risk layer's max_position_pct still caps it).
+    target_position_pct: float = field(
+        default_factory=lambda: _env_float("TARGET_POSITION_PCT", 0.10)
+    )
+
     db_path: Path = field(default_factory=lambda: DATA_DIR / "trading.db")
     model_path: Path = field(default_factory=lambda: DATA_DIR / "signal_model.json")
     kill_switch_path: Path = field(default_factory=lambda: DATA_DIR / "KILL_SWITCH")

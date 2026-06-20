@@ -1,0 +1,40 @@
+# Watchlist — the universe the agent scans for swing-trade signals.
+# One symbol per line. Lines starting with '#' and blank lines are ignored.
+# You can add an optional sector label after a comma (informational only).
+#
+# Starter universe: ~18 liquid, high-volume large-caps + major ETFs, spread
+# across sectors. Chosen so technical signals are tradeable (tight spreads,
+# reliable fills) and you're not unknowingly making one big sector bet.
+# Edit freely — keep names liquid; avoid microcaps/penny stocks where
+# technical signals are mostly noise.
+
+# --- Broad-market ETFs (lower single-name risk, smoother signals) ---
+SPY, broad-market
+QQQ, nasdaq-100
+
+# --- Technology ---
+AAPL, technology
+MSFT, technology
+NVDA, technology
+GOOGL, technology
+META, technology
+
+# --- Consumer ---
+AMZN, consumer-discretionary
+WMT, consumer-staples
+HD, consumer-discretionary
+
+# --- Financials ---
+JPM, financials
+V, financials
+
+# --- Health care ---
+UNH, health-care
+JNJ, health-care
+
+# --- Energy ---
+XOM, energy
+
+# --- Sector ETFs ---
+XLE, energy-sector
+XLF, financials-sector

@@ -36,6 +36,7 @@ get_order_book              reset_kill_switch          get_session_summary
 |-------|-------|-------|
 | **1. Data** | `get_quote`, `get_bars`, `get_order_book` | Real-time/historical data. Synthetic in paper mode, `robin_stocks` in live mode. |
 | **2. Strategy** | `generate_signal` | XGBoost over RSI / MACD / BB-width / volume z-score → BUY/SELL/HOLD + confidence. Returns the raw feature vector so the agent can reason *on top of* it. |
+| **+ Orchestration** | `get_watchlist`, `scan_watchlist` | Scan the whole universe → ranked, sized, risk-checked decisions. Dry-run by default. |
 | **3. Risk** | `check_risk`, `get_portfolio_status` | **Deterministic, non-bypassable** hard limits. Not agent judgement. |
 | **4. Execution** | `place_order`, `cancel_order`, `get_open_orders` | Re-runs risk checks in code + idempotency keys. |
 | **5. Monitoring** | `log_trade`, `get_trade_history`, `get_session_summary` | Immutable, hash-chained audit log. |
@@ -65,21 +66,50 @@ pip install -r requirements.txt robin_stocks   # + live mode
 cp .env.example .env                      # then edit limits / creds
 ```
 
+### Pick stocks → scan → trade (the workflow)
+
+This agent doesn't pick "good companies" — it times entries/exits on a
+**watchlist you curate** using technical signals. The workflow:
+
+1. **Curate the universe** in `watchlist.txt` (ships with ~17 liquid large-caps
+   + ETFs across sectors). Keep names liquid; technicals are noise on microcaps.
+2. **Train on real history** (see below) so signals have an edge.
+3. **Scan** the watchlist — generates a signal per name, decides entry/exit/hold,
+   sizes it, and runs it through the risk layer:
+   ```bash
+   python scripts/run_scan.py            # dry run — print ranked, risk-checked ideas
+   python scripts/run_scan.py --execute  # place the approved orders (paper by default)
+   ```
+4. **Schedule it** for swing cadence (once or a few times a day) via cron, a
+   systemd timer, or Claude Code's `/loop` skill. Or just ask Claude to call the
+   `scan_watchlist` tool.
+
+Sizing: a new position targets `TARGET_POSITION_PCT` of equity (default 10%),
+capped by the risk layer's `MAX_POSITION_PCT` and per-order notional limit.
+Exits trigger on a stop-loss breach or a confident SELL signal on a held name.
+
 ### Train the strategy model
 
 The strategy layer works out-of-the-box with a transparent **rule-based
 fallback**, but for real signals train the XGBoost model:
 
 ```bash
-# End-to-end smoke test on synthetic data (no creds needed):
-python scripts/train_model.py --synthetic --n-symbols 40
+# Real historicals from a FREE source (yfinance), using watchlist.txt — recommended:
+python scripts/train_model.py --source yfinance --period 3y --interval 1d
 
-# Real historicals (requires live Robinhood creds in .env):
-python scripts/train_model.py --symbols AAPL,MSFT,NVDA --span month
+# Specific symbols instead of the watchlist:
+python scripts/train_model.py --source yfinance --symbols AAPL,MSFT,NVDA
+
+# End-to-end smoke test on synthetic data (no network/creds needed):
+python scripts/train_model.py --synthetic --n-symbols 40
 ```
 
 The model is saved to `data/signal_model.json`, which the strategy layer loads
 automatically.
+
+> **Note:** yfinance reaches `query1/query2.finance.yahoo.com`. In a sandboxed or
+> remote environment those hosts must be on the network egress allowlist —
+> otherwise run training locally. The synthetic path needs no network.
 
 ### Validate it — no need to wait for market open
 
@@ -173,19 +203,24 @@ trading.
 ## Project layout
 
 ```
-server.py                 MCP server (FastMCP) — exposes all 13 tools
+server.py                 MCP server (FastMCP) — exposes all 15 tools
+watchlist.txt             The universe the agent scans (edit this)
 trading/
   config.py               env-driven config + paper/live gating
   storage.py              SQLite: hash-chained audit log, orders, paper account
   broker.py               PaperBroker (synthetic) + RobinhoodBroker (live)
   features.py             RSI / MACD / BB-width / volume z-score
   model.py                XGBoost signal model + rule-based fallback
+  market_data.py          Free historical data (yfinance) for training
+  watchlist.py            Watchlist loader
+  scanner.py              Watchlist scanner -> ranked, risk-checked decisions
   data_layer.py           Layer 1
   strategy_layer.py       Layer 2
   risk_layer.py           Layer 3 (non-bypassable guards)
   execution_layer.py      Layer 4 (idempotency + enforced risk)
   monitoring_layer.py     Layer 5
-scripts/train_model.py    Offline XGBoost training
+scripts/train_model.py    Offline XGBoost training (yfinance / synthetic)
+scripts/run_scan.py       Run one watchlist scan (schedulable)
 scripts/demo_session.py   One-command end-to-end paper-mode demo
 tests/test_risk_layer.py  Safety-critical tests
 ```

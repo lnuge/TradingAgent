@@ -48,20 +48,45 @@ def build_dataset(bars_by_symbol: dict[str, list], horizon: int, threshold: floa
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--symbols", default="", help="Comma-separated symbols (live data).")
-    ap.add_argument("--synthetic", action="store_true", help="Force synthetic data source.")
+    ap.add_argument(
+        "--source",
+        choices=["yfinance", "robinhood", "synthetic"],
+        default="yfinance",
+        help="Where to pull training bars from (default: yfinance / free).",
+    )
+    ap.add_argument("--symbols", default="", help="Comma-separated symbols. Defaults to watchlist.txt.")
+    ap.add_argument("--synthetic", action="store_true", help="Shortcut for --source synthetic.")
     ap.add_argument("--n-symbols", type=int, default=30, help="Synthetic symbol count.")
-    ap.add_argument("--span", default="month")
-    ap.add_argument("--horizon", type=int, default=5)
-    ap.add_argument("--threshold", type=float, default=0.004)
+    ap.add_argument("--period", default="3y", help="History length for yfinance (e.g. 2y, 3y, 5y).")
+    ap.add_argument("--interval", default="1d", help="Bar interval for yfinance (swing: 1d).")
+    ap.add_argument("--span", default="month", help="Span for robinhood/synthetic sources.")
+    ap.add_argument("--horizon", type=int, default=5, help="Forward bars used to build labels.")
+    ap.add_argument("--threshold", type=float, default=0.01, help="Return threshold for BUY/SELL labels.")
     args = ap.parse_args()
 
     cfg = get_config()
+    source = "synthetic" if args.synthetic else args.source
     symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    if not symbols and source != "synthetic":
+        from trading.watchlist import load_watchlist
 
-    if symbols and not args.synthetic:
+        symbols = load_watchlist()
+        print(f"Using watchlist ({len(symbols)} symbols): {', '.join(symbols)}")
+
+    bars_by_symbol: dict[str, list] = {}
+    if source == "yfinance":
+        from trading.market_data import MarketDataError, fetch_bars
+
+        print(f"Pulling {args.period} of {args.interval} bars from yfinance ...")
+        for s in symbols:
+            try:
+                bars_by_symbol[s] = fetch_bars(s, period=args.period, interval=args.interval)
+                print(f"  {s}: {len(bars_by_symbol[s])} bars")
+            except MarketDataError as exc:
+                print(f"  {s}: SKIP ({exc})")
+    elif source == "robinhood":
         broker = RobinhoodBroker()
-        print(f"Pulling live historicals for {symbols} ...")
+        print(f"Pulling Robinhood historicals for {symbols} ...")
         bars_by_symbol = {s: broker.get_bars(s, span=args.span) for s in symbols}
     else:
         broker = PaperBroker()

@@ -16,9 +16,17 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from trading import data_layer, execution_layer, monitoring_layer, risk_layer, strategy_layer
+from trading import (
+    data_layer,
+    execution_layer,
+    monitoring_layer,
+    risk_layer,
+    scanner,
+    strategy_layer,
+)
 from trading.config import get_config
 from trading.context import SESSION_ID
+from trading.watchlist import load_watchlist_with_sectors
 
 mcp = FastMCP("trading-agent")
 
@@ -49,6 +57,27 @@ def generate_signal(symbol: str, interval: str = "5minute", span: str = "day") -
     BUY/SELL/HOLD + confidence + the raw feature vector. Layer your own
     qualitative reasoning on top; do not follow it blindly."""
     return strategy_layer.generate_signal(symbol, interval=interval, span=span)
+
+
+@mcp.tool()
+def get_watchlist() -> dict[str, Any]:
+    """List the symbols (with sector labels) the agent scans, from watchlist.txt."""
+    items = load_watchlist_with_sectors()
+    return {"count": len(items), "watchlist": items}
+
+
+@mcp.tool()
+def scan_watchlist(
+    execute: bool = False,
+    symbols: list[str] | None = None,
+    interval: str = "day",
+    span: str = "month",
+) -> dict[str, Any]:
+    """Scan the watchlist (or a given symbol list) for swing-trade opportunities.
+    Generates a signal per name, decides entry/exit/hold, sizes it, and runs it
+    through the risk layer. Returns ranked, risk-checked ideas. Dry run by
+    default; pass execute=true to place the approved orders."""
+    return scanner.scan_watchlist(symbols=symbols, execute=execute, interval=interval, span=span)
 
 
 # === RISK LAYER (hard constraints) =========================================
