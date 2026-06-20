@@ -59,6 +59,10 @@ class RiskLimits:
 class Config:
     mode: str = field(default_factory=lambda: os.getenv("TRADING_MODE", "paper").strip().lower())
     enable_live: bool = field(default_factory=lambda: _env_bool("ENABLE_LIVE_TRADING", False))
+    # Hybrid: pull REAL market data from Robinhood but simulate fills (paper
+    # account). Lets you validate against live quotes with zero financial risk.
+    # Requires Robinhood credentials and is subject to market hours.
+    live_data: bool = field(default_factory=lambda: _env_bool("LIVE_MARKET_DATA", False))
 
     # Paper account seed equity.
     paper_starting_cash: float = field(
@@ -79,9 +83,11 @@ class Config:
     def describe_mode(self) -> str:
         if self.is_live:
             return "LIVE (real money — orders sent to Robinhood)"
+        if self.live_data:
+            return "PAPER FILLS + LIVE DATA (real Robinhood quotes, simulated execution)"
         if self.mode == "live" and not self.enable_live:
             return "PAPER (TRADING_MODE=live ignored: ENABLE_LIVE_TRADING not set)"
-        return "PAPER (simulated execution, no real orders)"
+        return "PAPER (synthetic market, simulated execution, no real orders)"
 
 
 # Singleton-style accessor so every layer shares one config instance.

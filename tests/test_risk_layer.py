@@ -124,6 +124,28 @@ def test_position_size_limit(fresh_env):
     assert pos["market_value"] <= 0.20 * status["equity"] + 1e-6
 
 
+def test_drawdown_breach_auto_trips_kill_switch(fresh_env):
+    """Exceeding the daily drawdown limit must reject the order AND engage the
+    kill switch so subsequent trading is halted too."""
+    risk = fresh_env["risk"]
+    from trading.storage import get_storage
+
+    equity = risk.get_portfolio_status()["equity"]
+    # Pretend the day opened 5% higher than current equity (limit is 3%).
+    get_storage().set_day_start_equity(equity / (1 - 0.05))
+
+    d = risk.evaluate_risk("BUY", "AAPL", 1, confidence=0.99)
+    assert d.approved is False
+    assert any("drawdown" in r.lower() for r in d.reasons)
+    assert risk.is_kill_switch_engaged() is True
+
+    # A fresh, otherwise-fine order is now blocked by the tripped kill switch.
+    d2 = risk.evaluate_risk("BUY", "MSFT", 1, confidence=0.99)
+    assert d2.approved is False
+    assert any("kill switch" in r.lower() for r in d2.reasons)
+    risk.reset_kill_switch()
+
+
 def test_audit_chain_integrity(fresh_env):
     execution = fresh_env["execution"]
     execution.place_order("AAPL", "BUY", 1, idempotency_key="chain-1", confidence=0.9)

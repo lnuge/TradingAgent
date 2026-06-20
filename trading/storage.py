@@ -196,6 +196,12 @@ class Storage:
         with self._lock, self._conn:
             self._conn.execute("UPDATE account SET cash = ? WHERE id = 1", (cash,))
 
+    def set_day_start_equity(self, value: float) -> None:
+        """Override the day-start equity marker. Used by tests/demos to simulate
+        intraday losses and exercise the drawdown → kill-switch path."""
+        with self._lock, self._conn:
+            self._conn.execute("UPDATE account SET day_start_equity = ? WHERE id = 1", (value,))
+
     def roll_day_if_needed(self) -> None:
         """Reset the day-start equity marker once per UTC day."""
         acct = self.get_account()

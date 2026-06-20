@@ -81,11 +81,30 @@ python scripts/train_model.py --symbols AAPL,MSFT,NVDA --span month
 The model is saved to `data/signal_model.json`, which the strategy layer loads
 automatically.
 
-### Run the tests
+### Validate it — no need to wait for market open
+
+Paper mode uses a self-contained synthetic market, so you can validate the
+whole system **24/7 with zero credentials**:
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q          # 1) safety tests (risk, idempotency, kill switch, audit)
+python scripts/demo_session.py      # 2) full agent session, end to end
 ```
+
+The demo runs a complete loop the way Claude would (quote → signal → risk →
+execute) and deliberately forces every guard to fire — idempotency replay, the
+order-size cap, the no-naked-short rule, and a simulated drawdown that
+auto-trips the kill switch — finishing with a session summary and audit
+hash-chain check. It writes to an isolated `data/demo/` DB and is repeatable.
+
+| Mode | Data | Fills | Market hours? | Risk |
+|------|------|-------|---------------|------|
+| **Paper** (default) | synthetic | simulated | ❌ no | none |
+| **Paper + live data** (`LIVE_MARKET_DATA=1`) | real Robinhood quotes | simulated | ✅ yes | none |
+| **Live** (`TRADING_MODE=live` + `ENABLE_LIVE_TRADING=1`) | real | **real orders** | ✅ yes | real money |
+
+The middle row lets you validate against real quotes with no financial risk —
+it needs Robinhood credentials and only returns fresh data during market hours.
 
 ---
 
@@ -167,6 +186,7 @@ trading/
   execution_layer.py      Layer 4 (idempotency + enforced risk)
   monitoring_layer.py     Layer 5
 scripts/train_model.py    Offline XGBoost training
+scripts/demo_session.py   One-command end-to-end paper-mode demo
 tests/test_risk_layer.py  Safety-critical tests
 ```
 

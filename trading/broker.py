@@ -129,20 +129,34 @@ class BaseBroker:
 
 
 class PaperBroker(BaseBroker):
+    """Simulated execution against the paper account.
+
+    Market data comes from the deterministic synthetic market by default, or
+    from an injected ``data_source`` (e.g. a :class:`RobinhoodBroker`) for the
+    live-data + paper-fills hybrid. Fills are always simulated regardless.
+    """
+
     mode = "paper"
 
-    def __init__(self, storage: Storage | None = None):
+    def __init__(self, storage: Storage | None = None, data_source: "BaseBroker | None" = None):
         self.market = SyntheticMarket()
         self.storage = storage or get_storage()
+        self.data_source = data_source
 
     def get_quote(self, symbol: str) -> dict[str, Any]:
+        if self.data_source is not None:
+            return self.data_source.get_quote(symbol)
         return self.market.quote(symbol)
 
     def get_bars(self, symbol: str, interval: str = "5minute", span: str = "day") -> list[dict[str, Any]]:
+        if self.data_source is not None:
+            return self.data_source.get_bars(symbol, interval=interval, span=span)
         count = {"day": 78, "week": 200, "month": 300}.get(span, 200)
         return self.market.bars(symbol, count=max(count, 60))
 
     def get_order_book(self, symbol: str, depth: int = 5) -> dict[str, Any]:
+        if self.data_source is not None:
+            return self.data_source.get_order_book(symbol, depth=depth)
         return self.market.order_book(symbol, depth)
 
     def submit_order(self, symbol: str, side: str, quantity: float) -> dict[str, Any]:
@@ -278,5 +292,11 @@ def get_broker(config: Config | None = None) -> BaseBroker:
     if _broker is not None:
         return _broker
     cfg = config or get_config()
-    _broker = RobinhoodBroker() if cfg.is_live else PaperBroker()
+    if cfg.is_live:
+        _broker = RobinhoodBroker()
+    elif cfg.live_data:
+        # Hybrid: real Robinhood market data, simulated fills.
+        _broker = PaperBroker(data_source=RobinhoodBroker())
+    else:
+        _broker = PaperBroker()
     return _broker
